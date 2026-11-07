@@ -6,7 +6,6 @@ import torch
 
 import netflux
 from netflux import NetfluxWarning, Simulator, simulate
-from netflux.simulate import matlab_num2str
 
 
 def test_input_species_matches_analytic_solution(examples):
@@ -70,7 +69,7 @@ def test_steady_state_satisfies_fixed_point(examples):
     model = examples["kraeutler_betaAdrenergic_bmcsysbio2010"]
     sim = Simulator(model)
     for r in model.reactions:
-        if not model.topology.rules[model.reaction_index(r.id)].reactants:
+        if not model.topology.rules[model.reaction_index(r.id)].inputs:
             sim.set_reaction(r.id, weight=0.5)
     sim.run(300, 1.0)
     dydt = sim.ode()(torch.tensor(0.0), sim.y)
@@ -130,20 +129,19 @@ def test_write_data_format(tmp_path, examples):
     result = simulate(examples["exampleNet"], 0.3, 0.1, reactions={"r1": {"weight": 1}})
     path = result.write_data(tmp_path / "data.txt")
     lines = path.read_text().split("\n")
-    assert lines[0] == "Species_Name T0 T0.1 T0.2 T0.3 "
-    assert lines[1].startswith("A 0.0000 0.09") and lines[1].endswith(" ")
+    assert lines[0] == "Species_Name T0 T0.1 T0.2 T0.3"
+    assert lines[1].startswith("A 0.0000 0.09") and not lines[1].endswith(" ")
     assert len(lines[1].split()) == 5
     assert lines[5].startswith("E ")
     assert lines[-1] == ""
 
 
-@pytest.mark.parametrize(
-    "value,text",
-    [(0, "0"), (10, "10"), (0.1, "0.1"), (0.30000000000000004, "0.3"), (59.8, "59.8"),
-     (1.23456789, "1.2346"), (0.000123456789, "0.00012346"), (123.456789, "123.4568")],
-)
-def test_matlab_num2str(value, text):
-    assert matlab_num2str(value) == text
+def test_runs_end_exactly_at_duration(examples):
+    sim = Simulator(examples["exampleNet"])
+    sim.run(1.0, 0.3)
+    result = sim.run(1.0, 0.3)
+    assert float(result.t[-1]) == pytest.approx(2.0)
+    assert torch.all(torch.diff(result.t) > 0)
 
 
 def test_plot(examples):

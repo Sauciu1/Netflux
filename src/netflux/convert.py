@@ -82,7 +82,7 @@ def _libsbml():
 
 
 def import_sbml_qual(path: str | Path, name: str | None = None) -> Model:
-    """One reaction per transition input; ``qual_`` is stripped from IDs, as in MATLAB."""
+    """One reaction per transition input; the ``qual_`` prefix is stripped from IDs."""
     libsbml = _libsbml()
     path = Path(path)
     doc = libsbml.readSBMLFromFile(str(path))
@@ -93,9 +93,6 @@ def import_sbml_qual(path: str | Path, name: str | None = None) -> Model:
     qual = sbml_model.getPlugin("qual") if sbml_model is not None else None
     if qual is None:
         raise ModelError(f"{path.name} is not an SBML-qual model (no qual plugin)")
-
-    def clean(species_ref: str) -> str:
-        return species_ref.replace("qual_", "")
 
     rules: list[str] = []
     used: set[str] = set()
@@ -109,10 +106,10 @@ def import_sbml_qual(path: str | Path, name: str | None = None) -> Model:
                 "imported as one reaction per input"
             )
         for out in outs:
-            target = clean(out.getQualitativeSpecies())
+            target = out.getQualitativeSpecies().removeprefix("qual_")
             used.add(target)
             for inp in ins:
-                source = clean(inp.getQualitativeSpecies())
+                source = inp.getQualitativeSpecies().removeprefix("qual_")
                 used.add(source)
                 negative = inp.isSetSign() and inp.getSign() == libsbml.INPUT_SIGN_NEGATIVE
                 rules.append(f"{'!' if negative else ''}{source} => {target}")

@@ -65,11 +65,11 @@ def matlab_rhs(model: netflux.Model, y, w, n, ec50, ymax, tau) -> list[float]:
     topo = model.topology
     terms = []
     for j, rule in enumerate(topo.rules):
-        if not rule.reactants:
+        if not rule.inputs:
             terms.append(w[j])
             continue
         vals = []
-        for i, neg in zip(rule.reactants, rule.negated):
+        for i, neg in rule.inputs:
             a = matlab_act(y[i], w[j], n[j], ec50[j])
             vals.append(w[j] - a if neg else a)
         if len(vals) == 1:

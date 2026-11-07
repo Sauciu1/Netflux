@@ -57,8 +57,8 @@ def test_exports(tmp_path):
     assert main(["export-xgmml", "exampleNet", "-o", str(xgmml), "--style", str(style)]) == 0
     assert xgmml.exists() and style.exists()
     assert main(["export-xgmml", "exampleNet", "-o", str(tmp_path / "again.xgmml"), "--reference", str(xgmml)]) == 0
-    assert main(["export-python", "exampleNet", "-o", str(tmp_path), "--name", "ex"]) == 0
-    assert (tmp_path / "ex_run.py").exists()
+    assert main(["export-python", "exampleNet", "-o", str(tmp_path / "ex.py")]) == 0
+    assert (tmp_path / "ex.py").exists()
 
 
 def test_model_file_path(tmp_path):
@@ -80,11 +80,9 @@ def test_everything_defaults_to_output_folder(tmp_path, monkeypatch):
     assert main(["simulate", "exampleNet", "--t-end", "1", "-o", "data.csv"]) == 0
     assert main(["export-sif", "exampleNet"]) == 0
     assert main(["export-xgmml", "exampleNet", "--style", "style.xml"]) == 0
-    assert main(["export-python", "exampleNet", "-o", "code"]) == 0
+    assert main(["export-python", "exampleNet", "-o", "code/NetfluxODE.py"]) == 0
     assert sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*") if p.is_file()) == [
         "output/code/NetfluxODE.py",
-        "output/code/NetfluxODE_params.py",
-        "output/code/NetfluxODE_run.py",
         "output/data.csv",
         "output/exampleNet.sif",
         "output/exampleNet.xgmml",

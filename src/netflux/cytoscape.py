@@ -1,4 +1,4 @@
-"""Port of Netflux2sif.m / Netflux2xgmml.m: Cytoscape SIF and XGMML export."""
+"""Cytoscape export: SIF + node attributes (byte-identical to MATLAB Netflux) and XGMML."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ import shutil
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
-from xml.sax.saxutils import escape
 
 from ._data import SBGN_STYLE
 from .model import Model
@@ -32,37 +31,33 @@ class Edge:
 
 
 def network_edges(model: Model) -> tuple[list[Edge], list[str]]:
-    """SIF edges in MATLAB's order, plus the ``rcn<k>`` connector node names."""
+    """Edges of reactions with one product; multi-input reactions go through an ``rcn<k>`` AND node."""
     ids = model.species_ids
     edges: list[Edge] = []
     connectors: list[str] = []
     for k, rule in enumerate(model.topology.rules, start=1):
-        if len(rule.products) != 1 or not rule.reactants:
+        if len(rule.products) != 1 or not rule.inputs:
             continue
-        product = ids[rule.products[0]]
-        if len(rule.reactants) == 1:
-            edges.append(Edge(ids[rule.reactants[0]], -1 if rule.negated[0] else 1, product))
-        else:
-            connector = f"rcn{k}"
-            connectors.append(connector)
-            edges.append(Edge(connector, 1, product))
-            for i, neg in zip(rule.reactants, rule.negated):
-                edges.append(Edge(ids[i], -1 if neg else 1, connector))
+        target = ids[rule.products[0]]
+        if len(rule.inputs) > 1:
+            connectors.append(f"rcn{k}")
+            edges.append(Edge(connectors[-1], 1, target))
+            target = connectors[-1]
+        edges += [Edge(ids[i], -1 if neg else 1, target) for i, neg in rule.inputs]
     return edges, connectors
 
 
 def to_sif(model: Model) -> str:
-    """Byte-identical to MATLAB's Netflux2sif output."""
     edges, _ = network_edges(model)
     return "".join(f"{e.source}\t{e.sign}\t{e.target}\n" for e in edges)
 
 
 def to_node_attributes(model: Model) -> str:
     _, connectors = network_edges(model)
-    lines = ["Type (class=String)\n"]
-    lines += [f"{s.id} = {s.type}\n" for s in model.species]
-    lines += [f"{c} = connector\n" for c in connectors]
-    return "".join(lines)
+    lines = ["Type (class=String)"]
+    lines += [f"{s.id} = {s.type}" for s in model.species]
+    lines += [f"{c} = connector" for c in connectors]
+    return "\n".join(lines) + "\n"
 
 
 def write_sif(
@@ -81,14 +76,10 @@ def write_sif(
 
 # --- XGMML
 
-_GRAPH_HEADER = (
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
-    '<graph label="Cytoscape" xmlns:dc="http://purl.org/dc/elements/1.1/" '
-    'xmlns:xlink="http://www.w3.org/1999/xlink" '
-    'xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" '
-    'xmlns:cy="http://www.cytoscape.org" xmlns="http://www.cs.rpi.edu/XGMML"  directed="1">\n'
-    '<att name="documentVersion" value="1.1"/>\n'
-)
+_XGMML = "http://www.cs.rpi.edu/XGMML"
+_CY = "http://www.cytoscape.org"
+ET.register_namespace("", _XGMML)
+ET.register_namespace("cy", _CY)
 
 # species type -> (shape, height, width)
 NODE_GRAPHICS = {
@@ -101,148 +92,58 @@ NODE_GRAPHICS = {
     "intermediate": ("ELLIPSE", "20.0", "20.0"),
 }
 
-_COPIED_NODE_ATTRIBUTES = {"shared name", "canonicalName", "name", "Type", "HyperEdge.EntityType"}
-_GRAPHICS_FIELDS = ("type", "h", "w", "x", "y", "z", "fill", "width", "outline")
-_EMPTY_VALUE = {"string": " ", "real": "0.0", "integer": "0", "boolean": "0"}
-_CY_TYPE = {"string": "String", "real": "Double", "integer": "Integer", "boolean": "Boolean"}
+
+def _el(parent: ET.Element | None, tag: str, **attrib: str) -> ET.Element:
+    tag = f"{{{_XGMML}}}{tag}"
+    return ET.Element(tag, attrib) if parent is None else ET.SubElement(parent, tag, attrib)
 
 
-def _q(value: str) -> str:
-    """Escape an XML attribute value, keeping tabs as MATLAB does."""
-    return escape(str(value), {'"': "&quot;"})
+def _att(parent: ET.Element, name: str, value: object) -> None:
+    _el(parent, "att", type="string", name=name, value=str(value), **{f"{{{_CY}}}type": "String"})
 
 
-def _local(tag: str) -> str:
-    return tag.rsplit("}", 1)[-1]
-
-
-def _attr(element: ET.Element, name: str, default: str | None = None) -> str | None:
-    return element.attrib.get(name, default)
-
-
-def _cy_type(att: ET.Element) -> str | None:
-    for key, value in att.attrib.items():
-        if key == "{http://www.cytoscape.org}type" or key == "cy:type":
-            return value
-    return None
-
-
-def _children(element: ET.Element, name: str) -> list[ET.Element]:
-    return [c for c in element if _local(c.tag) == name]
-
-
-@dataclass
-class _RefNode:
-    atts: list[ET.Element]
-    graphics: ET.Element | None
-
-
-@dataclass
-class _RefEdge:
-    atts: list[ET.Element]
-    graphics: ET.Element | None
-
-
-def _read_reference(path: str | Path) -> tuple[dict[str, _RefNode], dict[str, _RefEdge]]:
-    root = ET.parse(path).getroot()
-    nodes: dict[str, _RefNode] = {}
-    for node in _children(root, "node"):
-        label = _attr(node, "label")
-        if label is None or label in nodes:
-            continue
-        graphics = next(iter(_children(node, "graphics")), None)
-        nodes[label] = _RefNode(_children(node, "att"), graphics)
-    edges: dict[str, _RefEdge] = {}
-    for edge in _children(root, "edge"):
-        label = _attr(edge, "label")
-        if label is None or label in edges:
-            continue
-        graphics = next(iter(_children(edge, "graphics")), None)
-        edges[label] = _RefEdge(_children(edge, "att"), graphics)
-    return nodes, edges
-
-
-def _att_line(att: ET.Element, empty_values: dict[str, str]) -> str:
-    att_type = _attr(att, "type", "string")
-    name = _attr(att, "name", "")
-    value = _attr(att, "value")
-    if value is None:
-        value = empty_values.get(att_type, "")
-    cy_type = _cy_type(att) or _CY_TYPE.get(att_type, "String")
-    return f'<att type="{_q(att_type)}" name="{_q(name)}" value="{_q(value)}" cy:type="{_q(cy_type)}"/>\n'
+def _reference_graphics(path: str | Path) -> tuple[dict[str, dict], dict[str, dict]]:
+    """``{label: <graphics> attributes}`` for the nodes and edges of a Cytoscape XGMML file."""
+    found: dict[str, dict[str, dict]] = {"node": {}, "edge": {}}
+    for element in ET.parse(path).getroot():
+        kind = element.tag.rsplit("}", 1)[-1]
+        if kind in found and "label" in element.attrib:
+            graphics = next((c for c in element if c.tag.rsplit("}", 1)[-1] == "graphics"), None)
+            if graphics is not None:
+                plain = {k: v for k, v in graphics.attrib.items() if not k.startswith("{")}
+                found[kind].setdefault(element.attrib["label"], plain)
+    return found["node"], found["edge"]
 
 
 def to_xgmml(model: Model, reference: str | Path | None = None) -> str:
     """Nodes and edges matching a Cytoscape ``reference`` keep its layout and graphics."""
-    ref_nodes, ref_edges = _read_reference(reference) if reference is not None else ({}, {})
+    ref_nodes, ref_edges = _reference_graphics(reference) if reference is not None else ({}, {})
     edges, connectors = network_edges(model)
-    node_names = model.species_ids + connectors
-    node_labels = model.species_ids + ["AND"] * len(connectors)
-    node_types = [s.type for s in model.species] + ["connector"] * len(connectors)
-    node_id = {}
-    for i, name in enumerate(node_names, start=1):
-        node_id.setdefault(name, i)
+    graph = _el(None, "graph", label="Cytoscape", directed="1")
+    _el(graph, "att", name="documentVersion", value="1.1")
 
-    out = [_GRAPH_HEADER]
-    for i, (name, label, ntype) in enumerate(zip(node_names, node_labels, node_types), start=1):
-        out.append(f'<node label="{_q(name)}" id="{i}">\n')
-        ref = ref_nodes.get(name)
-        if ref is not None:
-            for att in ref.atts:
-                if len(ref.atts) == 1 or _attr(att, "name") in _COPIED_NODE_ATTRIBUTES:
-                    out.append(_att_line(att, _EMPTY_VALUE))
-            g = ref.graphics
-            fields = (
-                "".join(
-                    f' {f}="{_q(_attr(g, f))}"' for f in _GRAPHICS_FIELDS if _attr(g, f) is not None
-                )
-                if g is not None
-                else ""
-            )
-            out.append(f"<graphics{fields}>\n")
-        else:
-            for att_name, value in (
-                ("shared name", name),
-                ("canonicalName", label),
-                ("name", name),
-                ("Type", ntype),
-                ("HyperEdge.EntityType", "RegularNode"),
-            ):
-                out.append(
-                    f'<att type="string" name="{att_name}" value="{_q(value)}" cy:type="String"/>\n'
-                )
-            shape, h, w = NODE_GRAPHICS.get(ntype, NODE_GRAPHICS[""])
-            out.append(
-                f'<graphics type="{shape}" h="{h}" w="{w}" fill="#FFFFFF" width="3.0" outline="#000000">\n'
-            )
-        out.append("</graphics>\n</node>\n")
+    nodes = [(s.id, s.id, s.type) for s in model.species] + [(c, "AND", "connector") for c in connectors]
+    node_ids: dict[str, int] = {}
+    for i, (name, label, kind) in enumerate(nodes, start=1):
+        node_ids.setdefault(name, i)
+        node = _el(graph, "node", label=name, id=str(i))
+        for att_name, value in (("shared name", name), ("canonicalName", label), ("name", name),
+                                ("Type", kind), ("HyperEdge.EntityType", "RegularNode")):
+            _att(node, att_name, value)
+        shape, h, w = NODE_GRAPHICS.get(kind, NODE_GRAPHICS[""])
+        defaults = {"type": shape, "h": h, "w": w, "fill": "#FFFFFF", "width": "3.0", "outline": "#000000"}
+        _el(node, "graphics", **(defaults | ref_nodes.get(name, {})))
 
     for e in edges:
-        label = f"{e.source}\t({e.sign})\t{e.target}"
-        key = f"{e.source} ({e.sign}) {e.target}"
-        source, target = node_id[e.source], node_id[e.target]
-        arrow = "ARROW" if e.sign == 1 else "T"
-        ref = ref_edges.get(key)
-        if ref is not None:
-            out.append(f'<edge label="{_q(label)}" source="{source}" target="{target}" cy:directed="1">\n')
-            out.extend(_att_line(att, {}) for att in ref.atts)
-            g = ref.graphics
-            width = _attr(g, "width", "2.0") if g is not None else "2.0"
-            fill = _attr(g, "fill", "#000000") if g is not None else "#000000"
-            out.append(f'<graphics width="{_q(width)}" fill="{_q(fill)}">\n')
-            out.append(f'<att type="string" name="canonicalName" value="{_q(label)}"/>\n')
-            out.append(f'<att type="string" name="interaction" value="{e.sign}" cy:editable="false"/>\n')
-        else:
-            out.append(f'<edge label="{_q(label)}" source="{source}" target="{target}">\n')
-            out.append(f'<att type="string" name="canonicalName" value="{_q(label)}"/>\n')
-            out.append(f'<att type="string" name="interaction" value="{e.sign}" cy:editable="false"/>\n')
-            out.append('<graphics width="2.0" fill="#000000">\n')
-        out.append(
-            f'<att name="EDGE_TARGET_ARROW_SHAPE" value="{arrow}" type="string" cy:type="String"/>\n'
-        )
-        out.append("</graphics>\n</edge>\n")
-    out.append("</graph>")
-    return "".join(out)
+        label = f"{e.source} ({e.sign}) {e.target}"
+        edge = _el(graph, "edge", label=label, source=str(node_ids[e.source]), target=str(node_ids[e.target]))
+        _att(edge, "canonicalName", label)
+        _att(edge, "interaction", e.sign)
+        graphics = _el(edge, "graphics", **({"width": "2.0", "fill": "#000000"} | ref_edges.get(label, {})))
+        _att(graphics, "EDGE_TARGET_ARROW_SHAPE", "ARROW" if e.sign == 1 else "T")
+
+    ET.indent(graph)
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' + ET.tostring(graph, encoding="unicode")
 
 
 def write_xgmml(
@@ -250,7 +151,7 @@ def write_xgmml(
 ) -> Path:
     path = output_path(path, f"{model.name}.xgmml")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(to_xgmml(model, reference), encoding="utf-8", newline="")
+    path.write_text(to_xgmml(model, reference), encoding="utf-8")
     return path
 
 

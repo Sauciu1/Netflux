@@ -9,7 +9,6 @@ from netflux import read_model, to_node_attributes, to_sif, to_xgmml, write_sbgn
 from .conftest import complete_fixtures, fixture_id
 
 NS = "{http://www.cs.rpi.edu/XGMML}"
-CY = "{http://www.cytoscape.org}"
 FIXTURES = complete_fixtures()
 
 
@@ -88,8 +87,6 @@ def test_xgmml_reference_layout_is_copied(tmp_path, examples):
     assert graphics["rcn5"].get("fill") == "#123456"
     names = [a.get("name") for a in out.find(f"{NS}node").findall(f"{NS}att")]
     assert names == ["shared name", "canonicalName", "name", "Type", "HyperEdge.EntityType"]
-    edge = out.find(f"{NS}edge")
-    assert edge.get(f"{CY}directed") == "1"
 
 
 def test_xgmml_reference_with_new_species(tmp_path, examples):

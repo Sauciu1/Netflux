@@ -35,19 +35,8 @@ REACTION_HEADERS = [
 ]
 
 
-def _is_missing(value: Any) -> bool:
-    if value is None:
-        return True
-    if isinstance(value, float) and math.isnan(value):
-        return True
-    try:
-        return bool(pd.isna(value))
-    except (TypeError, ValueError):
-        return False
-
-
 def _text(value: Any) -> str:
-    if _is_missing(value):
+    if pd.isna(value):
         return ""
     if isinstance(value, float) and value.is_integer():
         value = int(value)
@@ -55,14 +44,21 @@ def _text(value: Any) -> str:
 
 
 def _number(value: Any) -> float | None:
-    if _is_missing(value) or isinstance(value, bool):
+    if isinstance(value, bool):
         return None
-    if isinstance(value, (int, float)):
-        return float(value)
     try:
-        return float(str(value).strip())
-    except ValueError:
+        number = float(value)
+    except (TypeError, ValueError):
         return None
+    return None if math.isnan(number) else number
+
+
+def _params(row, columns: dict[str, int], defaults: dict[str, float], label: str, warnings: list[str]):
+    values = {k: _number(_get(row, c)) for k, c in columns.items()}
+    missing = [k for k, v in values.items() if v is None]
+    if missing:
+        warnings.append(f"{label}: missing parameter(s) {', '.join(missing)}; default parameters assigned")
+    return {k: defaults[k] if v is None else v for k, v in values.items()}
 
 
 def _find_sheet(sheets: dict[str, pd.DataFrame], name: str, path: Path) -> pd.DataFrame:
@@ -99,13 +95,7 @@ def read_model(path: str | Path) -> Model:
         sid = _text(_get(row, 1))
         if not sid:
             continue
-        params = {k: _number(_get(row, c)) for k, c in (("y0", 3), ("ymax", 4), ("tau", 5))}
-        missing = [k for k, v in params.items() if v is None]
-        if missing:
-            warnings.append(
-                f"Species {sid}: missing parameter(s) {', '.join(missing)}; default parameters assigned"
-            )
-        params = {k: DEFAULT_SPECIES_PARAMS[k] if v is None else v for k, v in params.items()}
+        params = _params(row, {"y0": 3, "ymax": 4, "tau": 5}, DEFAULT_SPECIES_PARAMS, f"Species {sid}", warnings)
         species.append(
             Species(
                 id=sid,
@@ -129,14 +119,9 @@ def read_model(path: str | Path) -> Model:
         if not rule:
             continue
         rid = _text(_get(row, 1))
-        params = {k: _number(_get(row, c)) for k, c in (("weight", 3), ("n", 4), ("ec50", 5))}
-        missing = [k for k, v in params.items() if v is None]
-        if missing:
-            warnings.append(
-                f"Reaction {rid}: {rule}: missing parameter(s) {', '.join(missing)}; "
-                "default parameters assigned"
-            )
-        params = {k: DEFAULT_REACTION_PARAMS[k] if v is None else v for k, v in params.items()}
+        params = _params(
+            row, {"weight": 3, "n": 4, "ec50": 5}, DEFAULT_REACTION_PARAMS, f"Reaction {rid}: {rule}", warnings
+        )
         reactions.append(Reaction(id=rid, rule=rule, module=_text(_get(row, 0)), **params))
 
     model = Model(name=path.stem, species=species, reactions=reactions)

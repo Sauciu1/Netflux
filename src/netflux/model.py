@@ -8,7 +8,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .rules import RULE_ERRORS, Topology, compile_rules
+from .rules import Topology, compile_rules
 
 __all__ = [
     "Species",
@@ -18,10 +18,12 @@ __all__ = [
     "NetfluxWarning",
     "DEFAULT_SPECIES_PARAMS",
     "DEFAULT_REACTION_PARAMS",
+    "UNDEFINED_HILL",
 ]
 
 DEFAULT_SPECIES_PARAMS = {"y0": 0.0, "ymax": 1.0, "tau": 1.0}
 DEFAULT_REACTION_PARAMS = {"weight": 1.0, "n": 1.4, "ec50": 0.5}
+UNDEFINED_HILL = "EC50^n >= 0.5, so the normalized Hill function is undefined"
 
 _VALID_ID = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
 _RESERVED_IDS = {"AND", "NOT"}
@@ -126,23 +128,9 @@ class Model:
             out.append(f"Duplicate reactions detected: {'/'.join(rids)}: {rule}")
         for rxn, parsed in zip(self.reactions, self.topology.rules):
             if parsed.error is not None:
-                out.append(f"Reaction {rxn.id}: {rxn.rule}: {RULE_ERRORS[parsed.error]}")
-        out.extend(self.parameter_warnings())
-        return out
-
-    def parameter_warnings(
-        self, weight=None, n=None, ec50=None
-    ) -> list[str]:
-        """Warn where ``EC50**n >= 0.5`` (undefined Hill curve); ``n``/``ec50`` override the model's."""
-        n = [r.n for r in self.reactions] if n is None else list(n)
-        ec50 = [r.ec50 for r in self.reactions] if ec50 is None else list(ec50)
-        out = []
-        for rxn, parsed, nj, ej in zip(self.reactions, self.topology.rules, n, ec50):
-            if parsed.reactants and float(ej) ** float(nj) >= 0.5:
-                out.append(
-                    f"Reaction {rxn.id}: EC50={float(ej):g} and n={float(nj):g} give "
-                    "EC50^n >= 0.5, so the normalized Hill function is undefined"
-                )
+                out.append(f"Reaction {rxn.id}: {rxn.rule}: {parsed.error}")
+            if parsed.inputs and rxn.ec50**rxn.n >= 0.5:
+                out.append(f"Reaction {rxn.id}: {UNDEFINED_HILL}")
         return out
 
     # --- io

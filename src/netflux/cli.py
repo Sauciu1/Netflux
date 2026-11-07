@@ -139,8 +139,7 @@ def cmd_export_xgmml(args) -> int:
 
 def cmd_export_python(args) -> int:
     model = _load(args.model)
-    for path in export_python_ode(model, args.output, args.name):
-        print(f"Wrote {_show(path)}")
+    print(f"Wrote {_show(export_python_ode(model, args.output))}")
     return 0
 
 
@@ -227,8 +226,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("export-python", help="export standalone PyTorch ODE code", parents=[writes])
     p.add_argument("model", help=model_help)
-    p.add_argument("-o", "--output", help="subfolder of the output dir (default: the output dir)")
-    p.add_argument("--name", default="NetfluxODE", help="module name (default NetfluxODE)")
+    p.add_argument("-o", "--output", help="output .py file (default: NetfluxODE.py)")
     p.set_defaults(func=cmd_export_python)
 
     p = sub.add_parser(

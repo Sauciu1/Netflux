@@ -63,7 +63,7 @@ def test_every_writer_defaults_to_output_folder(tmp_path, examples):
     assert netflux.write_sif(model) == (out / "exampleNet.sif", out / "exampleNet_nodeAttributes.txt")
     assert netflux.write_xgmml(model) == out / "exampleNet.xgmml"
     assert netflux.write_sbgn_style() == out / "netflux_sbgn_style.xml"
-    assert netflux.export_python_ode(model, "code")[0] == out / "code" / "NetfluxODE.py"
+    assert netflux.export_python_ode(model, "code/ode.py") == out / "code" / "ode.py"
     assert netflux.simulate(model, 1).write_data() == out / "exampleNet_data.txt"
     assert all(p.exists() for p in out.rglob("*"))
     assert sorted(p.name for p in tmp_path.iterdir()) == ["output"]

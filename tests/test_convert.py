@@ -48,9 +48,9 @@ def test_import_sif_round_trips_and_gates(examples, tmp_path):
     def structure(model):
         topo, ids = model.topology, model.species_ids
         return {
-            (tuple(sorted((ids[i], neg) for i, neg in zip(r.reactants, r.negated))), ids[r.products[0]])
+            (tuple(sorted((ids[i], neg) for i, neg in r.inputs)), ids[r.products[0]])
             for r in topo.rules
-            if r.reactants and len(r.products) == 1
+            if r.inputs and len(r.products) == 1
         }
 
     assert structure(imported) == structure(original)

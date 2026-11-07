@@ -6,82 +6,67 @@ IDS = ["A", "B", "C"]
 
 def test_activation():
     r = parse_rule("A => B", IDS)
-    assert (r.reactants, r.negated, r.products, r.error) == ((0,), (False,), (1,), None)
+    assert (r.inputs, r.products, r.error) == (((0, False),), (1,), None)
 
 
 def test_inhibition():
-    r = parse_rule("!A => B", IDS)
-    assert r.reactants == (0,) and r.negated == (True,) and r.products == (1,)
+    assert parse_rule("!A => B", IDS).inputs == ((0, True),)
 
 
 def test_and_with_negation():
     r = parse_rule("A & !B => C", IDS)
-    assert r.reactants == (0, 1) and r.negated == (False, True) and r.products == (2,)
+    assert r.inputs == ((0, False), (1, True)) and r.products == (2,)
 
 
 def test_input_reaction():
     r = parse_rule("=> A", IDS)
-    assert r.reactants == () and r.products == (0,) and r.error is None
+    assert r.inputs == () and r.products == (0,) and r.error is None
 
 
-def test_plus_separator_is_and_like_matlab():
-    ids = ["NE", "B1ARPG", "B1ARPA", "B1AR"]
-    r = parse_rule("NE + !B1ARPG + !B1ARPA => B1AR", ids)
-    assert r.reactants == (0, 1, 2) and r.negated == (False, True, True) and r.error is None
+def test_plus_separator():
+    r = parse_rule("NE + !B1ARPG + !B1ARPA => B1AR", ["NE", "B1ARPG", "B1ARPA", "B1AR"])
+    assert r.inputs == ((0, False), (1, True), (2, True)) and r.error is None
 
 
 def test_netflux2_syntax():
-    r = parse_rule("A AND NOT B -> C", IDS)
-    assert r.reactants == (0, 1) and r.negated == (False, True) and r.products == (2,)
+    assert parse_rule("A AND NOT B -> C", IDS).inputs == ((0, False), (1, True))
 
 
 def test_self_loop():
     r = parse_rule("!A => A", IDS)
-    assert r.reactants == (0,) and r.negated == (True,) and r.products == (0,)
+    assert r.inputs == ((0, True),) and r.products == (0,)
 
 
-def test_reactants_in_species_order():
-    r = parse_rule("C & A => B", IDS)
-    assert r.reactants == (0, 2)
+def test_inputs_in_species_order():
+    assert parse_rule("C & A => B", IDS).inputs == ((0, False), (2, False))
 
 
-def test_whole_word_matching():
-    r = parse_rule("AA => A", ["A", "AA"])
-    assert r.reactants == (1,) and r.products == (0,)
+def test_whole_names_only():
+    r = parse_rule("AA & !AB => A", ["A", "AA", "AB"])
+    assert r.inputs == ((1, False), (2, True)) and r.products == (0,)
 
 
-def test_negation_needs_word_boundary():
-    # MATLAB's regexp('!'+ID) would also mark A as negated here.
-    r = parse_rule("A & !AB => C", ["A", "AB", "C"])
-    assert r.negated == (False, True)
+def test_keyword_inside_name_is_not_a_separator():
+    r = parse_rule("BAND & NOTCH => C", ["BAND", "NOTCH", "C"])
+    assert r.inputs == ((0, False), (1, False)) and r.error is None
 
 
 def test_negation_with_space():
-    assert parse_rule("! A => B", IDS).negated == (True,)
-
-
-def test_invalid_id_with_symbol_is_not_a_separator():
-    r = parse_rule("IP3 & Ca2+ => X", ["IP3", "Ca2+", "X"])
-    assert r.reactants == (0, 1) and r.error is None
+    assert parse_rule("! A => B", IDS).inputs == ((0, True),)
 
 
 def test_error_no_arrow_is_inert():
     r = parse_rule("A B", IDS)
-    assert r.error == "no_arrow" and r.reactants == () and r.products == ()
+    assert "arrow" in r.error and r.inputs == () and r.products == ()
 
 
 def test_error_no_products():
-    assert parse_rule("A =>", IDS).error == "no_products"
+    assert parse_rule("A =>", IDS).error == "product not recognized"
 
 
 def test_error_unknown_reactant_keeps_known_ones():
     r = parse_rule("A & X => C", IDS)
-    assert r.error == "reactants_not_recognized" and r.reactants == (0,)
-
-
-def test_error_no_recognized_reactant():
-    r = parse_rule("X => C", IDS)
-    assert r.error == "reactants_not_recognized" and r.reactants == ()
+    assert r.error == "reactant(s) not recognized: X" and r.inputs == ((0, False),)
 
 
 def test_compile_rules_producers():

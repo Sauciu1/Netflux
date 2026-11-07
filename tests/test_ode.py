@@ -5,35 +5,27 @@ import pytest
 import torch
 
 import netflux
-from netflux import AND, OR, NetfluxODE, act, inhib
+from netflux import NetfluxODE, hill
 
-from .conftest import complete_fixtures, matlab_rhs, model_params, native_rhs
+from .conftest import complete_fixtures, matlab_act, matlab_rhs, model_params, native_rhs
 
 F64 = torch.float64
 
 
-@pytest.mark.parametrize("w,n,ec50", [(1.0, 1.4, 0.5), (0.7, 2.0, 0.3), (1.0, 3.0, 0.6), (0.5, 1.0, 0.25)])
-def test_normalized_hill_identities(w, n, ec50):
+@pytest.mark.parametrize("n,ec50", [(1.4, 0.5), (2.0, 0.3), (3.0, 0.6), (1.0, 0.25)])
+def test_hill_identities(n, ec50):
     x = torch.tensor([0.0, ec50, 1.0], dtype=F64)
-    a = act(x, w, n, ec50)
-    assert a.tolist() == pytest.approx([0.0, w / 2, w], abs=1e-12)
-    assert inhib(x, w, n, ec50).tolist() == pytest.approx([w, w / 2, 0.0], abs=1e-12)
+    assert hill(x, n, ec50).tolist() == pytest.approx([0.0, 0.5, 1.0], abs=1e-12)
 
 
-def test_act_is_capped_and_clamped():
-    x = torch.tensor([-1e-9, 2.0, 5.0], dtype=F64)
-    a = act(x, 0.8, 1.4, 0.5)
-    assert a[0] == 0.0
-    assert torch.all(a <= 0.8)
+def test_hill_is_clamped():
+    h = hill(torch.tensor([-1e-9, 2.0, 5.0], dtype=F64), 1.4, 0.5)
+    assert h[0] == 0.0 and torch.all(h <= 1.0)
 
 
-def test_logic_gates():
-    x, y = torch.tensor(0.3, dtype=F64), torch.tensor(0.6, dtype=F64)
-    assert float(OR(x, y)) == pytest.approx(0.3 + 0.6 - 0.18)
-    w = torch.tensor(0.5, dtype=F64)
-    assert float(AND(w, x, y)) == pytest.approx(0.3 * 0.6 / 0.5)
-    assert float(AND(w, x, y, x)) == pytest.approx(0.3 * 0.6 * 0.3 / 0.25)
-    assert float(AND(torch.tensor(0.0, dtype=F64), x, y)) == 0.0
+@pytest.mark.parametrize("x", [0.0, 0.2, 0.5, 0.9, 1.0, 1.7])
+def test_weighted_hill_equals_matlab_act(x):
+    assert 0.7 * float(hill(torch.tensor(x, dtype=F64), 1.4, 0.5)) == pytest.approx(matlab_act(x, 0.7, 1.4, 0.5))
 
 
 def _random_states(n_species: int, count: int = 3, seed: int = 0):
