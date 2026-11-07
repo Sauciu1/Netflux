@@ -1,0 +1,17 @@
+[project]
+name = "netflux"
+version = "0.1.0"
+description = "Python wrapper adapted from fork of https://github.com/Sauciu1/Netflux"
+readme = "README.md"
+authors = [
+    { name = "Povilas Sauciuvienas", email = "p.sauciuvienas@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = []
+
+[project.scripts]
+netflux = "netflux:main"
+
+[build-system]
+requires = ["uv_build>=0.12.21,<0.13.0"]
+build-backend = "uv_build"
