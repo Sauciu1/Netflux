@@ -3,15 +3,61 @@ name = "netflux"
 version = "0.1.0"
 description = "Python wrapper adapted from fork of https://github.com/Sauciu1/Netflux"
 readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["license.txt"]
 authors = [
     { name = "Povilas Sauciuvienas", email = "p.sauciuvienas@gmail.com" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+keywords = ["systems biology", "signaling networks", "logic-based ODE", "normalized Hill", "Cytoscape", "pytorch"]
+
+dependencies = [
+    "torch>=2.5",
+    "torchdiffeq>=0.2.4",
+    "pandas>=2.2.3",
+    "openpyxl>=3.1",
+    "python-calamine>=0.3",
+]
+
+[project.optional-dependencies]
+plot = ["matplotlib>=3.9"]
+sbml = ["python-libsbml>=5.20"]
+all = ["netflux[plot,sbml]"]
 
 [project.scripts]
-netflux = "netflux:main"
+netflux = "netflux.cli:main"
+
+[project.urls]
+Repository = "https://github.com/Sauciu1/Netflux"
+Upstream = "https://github.com/saucermanlab/Netflux"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+# CPU-only torch on Linux/Windows: PyPI's default Linux wheel pulls in several GB
+# of CUDA libraries, and Netflux models are far too small to benefit from a GPU.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform != 'darwin'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [build-system]
-requires = ["uv_build>=0.12.21,<0.13.0"]
-build-backend = "uv_build"
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/netflux"]
+
+# Bundle the example models and Cytoscape style from the MATLAB folder (no copies in src/)
+[tool.hatch.build.targets.wheel.force-include]
+"Netflux/models" = "netflux/data/models"
+"Netflux/Netflux SBGN style.xml" = "netflux/data/Netflux SBGN style.xml"
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "Netflux/models", "Netflux/Netflux SBGN style.xml", "README.md", "license.txt"]

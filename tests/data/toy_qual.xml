@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" level="3" version="1"
+      xmlns:qual="http://www.sbml.org/sbml/level3/version1/qual/version1" qual:required="true">
+  <model id="toy">
+    <listOfCompartments>
+      <compartment id="cell" constant="true"/>
+    </listOfCompartments>
+    <qual:listOfQualitativeSpecies>
+      <qual:qualitativeSpecies qual:id="qual_A" qual:name="A protein" qual:compartment="cell" qual:constant="false"/>
+      <qual:qualitativeSpecies qual:id="qual_B" qual:name="B protein" qual:compartment="cell" qual:constant="false"/>
+      <qual:qualitativeSpecies qual:id="qual_C" qual:name="C protein" qual:compartment="cell" qual:constant="false"/>
+      <qual:qualitativeSpecies qual:id="qual_D" qual:name="D protein" qual:compartment="cell" qual:constant="false"/>
+      <qual:qualitativeSpecies qual:id="qual_E" qual:name="E protein" qual:compartment="cell" qual:constant="false"/>
+      <qual:qualitativeSpecies qual:id="qual_Unused" qual:compartment="cell" qual:constant="false"/>
+    </qual:listOfQualitativeSpecies>
+    <qual:listOfTransitions>
+      <qual:transition qual:id="tr1">
+        <qual:listOfInputs>
+          <qual:input qual:id="tr1_in" qual:qualitativeSpecies="qual_A" qual:transitionEffect="none" qual:sign="positive"/>
+        </qual:listOfInputs>
+        <qual:listOfOutputs>
+          <qual:output qual:id="tr1_out" qual:qualitativeSpecies="qual_B" qual:transitionEffect="assignmentLevel"/>
+        </qual:listOfOutputs>
+        <qual:listOfFunctionTerms>
+          <qual:defaultTerm qual:resultLevel="0"/>
+        </qual:listOfFunctionTerms>
+      </qual:transition>
+      <qual:transition qual:id="tr2">
+        <qual:listOfInputs>
+          <qual:input qual:id="tr2_in" qual:qualitativeSpecies="qual_B" qual:transitionEffect="none" qual:sign="negative"/>
+        </qual:listOfInputs>
+        <qual:listOfOutputs>
+          <qual:output qual:id="tr2_out" qual:qualitativeSpecies="qual_C" qual:transitionEffect="assignmentLevel"/>
+        </qual:listOfOutputs>
+        <qual:listOfFunctionTerms>
+          <qual:defaultTerm qual:resultLevel="0"/>
+        </qual:listOfFunctionTerms>
+      </qual:transition>
+      <qual:transition qual:id="tr3">
+        <qual:listOfInputs>
+          <qual:input qual:id="tr3_in" qual:qualitativeSpecies="qual_C" qual:transitionEffect="none"/>
+        </qual:listOfInputs>
+        <qual:listOfOutputs>
+          <qual:output qual:id="tr3_out" qual:qualitativeSpecies="qual_D" qual:transitionEffect="assignmentLevel"/>
+        </qual:listOfOutputs>
+        <qual:listOfFunctionTerms>
+          <qual:defaultTerm qual:resultLevel="0"/>
+        </qual:listOfFunctionTerms>
+      </qual:transition>
+      <qual:transition qual:id="tr4">
+        <qual:listOfInputs>
+          <qual:input qual:id="tr4_in1" qual:qualitativeSpecies="qual_A" qual:transitionEffect="none" qual:sign="positive"/>
+          <qual:input qual:id="tr4_in2" qual:qualitativeSpecies="qual_D" qual:transitionEffect="none" qual:sign="negative"/>
+        </qual:listOfInputs>
+        <qual:listOfOutputs>
+          <qual:output qual:id="tr4_out" qual:qualitativeSpecies="qual_E" qual:transitionEffect="assignmentLevel"/>
+        </qual:listOfOutputs>
+        <qual:listOfFunctionTerms>
+          <qual:defaultTerm qual:resultLevel="0"/>
+        </qual:listOfFunctionTerms>
+      </qual:transition>
+    </qual:listOfTransitions>
+  </model>
+</sbml>

@@ -43,3 +43,15 @@ Temporary Items
 .apdisk
 *.pyc
 ~*.docx
+
+# Python
+__pycache__/
+.venv/
+.pytest_cache/
+dist/
+build/
+.ruff_cache/
+
+# Generated files (CLI and library defaults write here)
+output/*
+!output/.gitkeep
