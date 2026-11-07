@@ -49,38 +49,47 @@ def test_unknown_model():
         main(["info", "does-not-exist"])
 
 
-def test_exports(tmp_path):
-    assert main(["export-sif", "exampleNet", "-o", str(tmp_path), "--name", "net"]) == 0
-    assert (tmp_path / "net.sif").exists() and (tmp_path / "net_nodeAttributes.txt").exists()
-    xgmml = tmp_path / "net.xgmml"
-    style = tmp_path / "style.xml"
-    assert main(["export-xgmml", "exampleNet", "-o", str(xgmml), "--style", str(style)]) == 0
-    assert xgmml.exists() and style.exists()
-    assert main(["export-xgmml", "exampleNet", "-o", str(tmp_path / "again.xgmml"), "--reference", str(xgmml)]) == 0
-    assert main(["export-python", "exampleNet", "-o", str(tmp_path / "ex.py")]) == 0
-    assert (tmp_path / "ex.py").exists()
+def test_convert_to_every_format(tmp_path):
+    out = tmp_path / "out"
+    for suffix in (".sif", ".xgmml", ".py", ".xml", ".xlsx"):
+        assert main(["convert", "exampleNet", "-o", str(out / f"net{suffix}")]) == 0
+        assert (out / f"net{suffix}").exists()
+    assert (out / "net_nodeAttributes.txt").exists()
+
+
+def test_convert_xgmml_reference_and_style(tmp_path):
+    first, style = tmp_path / "a.xgmml", tmp_path / "style.xml"
+    assert main(["convert", "exampleNet", "-o", str(first), "--style", str(style)]) == 0
+    assert style.exists()
+    assert main(["convert", "exampleNet", "-o", str(tmp_path / "b.xgmml"), "--reference", str(first)]) == 0
+    with pytest.raises(SystemExit):
+        main(["convert", "exampleNet", "-o", str(tmp_path / "c.xlsx"), "--reference", str(first)])
+
+
+def test_convert_from_sif(tmp_path):
+    sif = tmp_path / "net.sif"
+    sif.write_text("A\t1\tB\nB\t-1\tC\n")
+    assert main(["convert", str(sif), "-o", "net.xlsx"]) == 0
+    model = netflux.read_model(tmp_path / "output" / "net.xlsx")
+    assert [r.rule for r in model.reactions] == ["A => B", "!B => C"]
+    assert main(["simulate", str(sif)]) == 0
+
+
+def test_convert_from_sbml_qual(tmp_path):
+    assert main(["convert", str(DATA / "toy_qual.xml"), "-o", "toy.xlsx"]) == 0
+    assert netflux.read_model(tmp_path / "output" / "toy.xlsx").species_ids == ["A", "B", "C", "D", "E", "Unused"]
 
 
 def test_model_file_path(tmp_path):
-    path = netflux.load_example("exampleNet").to_excel(tmp_path / "mine.xlsx")
+    path = netflux.write_model(netflux.load_example("exampleNet"), tmp_path / "mine.xlsx")
     assert main(["info", str(path)]) == 0
 
 
-def test_convert_sif(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    sif = tmp_path / "net.sif"
-    sif.write_text("A\t1\tB\nB\t-1\tC\n")
-    assert main(["convert-sif", str(sif)]) == 0
-    model = netflux.read_model(tmp_path / "output" / "net.xlsx")
-    assert [r.rule for r in model.reactions] == ["A => B", "!B => C"]
-
-
-def test_everything_defaults_to_output_folder(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
+def test_everything_defaults_to_output_folder(tmp_path):
     assert main(["simulate", "exampleNet", "--t-end", "1", "-o", "data.csv"]) == 0
-    assert main(["export-sif", "exampleNet"]) == 0
-    assert main(["export-xgmml", "exampleNet", "--style", "style.xml"]) == 0
-    assert main(["export-python", "exampleNet", "-o", "code/NetfluxODE.py"]) == 0
+    assert main(["convert", "exampleNet", "-o", "exampleNet.sif"]) == 0
+    assert main(["convert", "exampleNet", "-o", "exampleNet.xgmml", "--style", "style.xml"]) == 0
+    assert main(["convert", "exampleNet", "-o", "code/NetfluxODE.py"]) == 0
     assert sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*") if p.is_file()) == [
         "output/code/NetfluxODE.py",
         "output/data.csv",
@@ -91,33 +100,14 @@ def test_everything_defaults_to_output_folder(tmp_path, monkeypatch):
     ]
 
 
-def test_output_dir_option(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    assert main(["export-sif", "exampleNet", "--output-dir", "results"]) == 0
-    assert (tmp_path / "results" / "exampleNet.sif").exists()
+def test_output_dir_option(tmp_path):
+    assert main(["convert", "exampleNet", "-o", "net.sif", "--output-dir", "results"]) == 0
+    assert (tmp_path / "results" / "net.sif").exists()
     assert not (tmp_path / "output").exists()
-
-
-def test_library_defaults_to_output_folder(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    model = netflux.load_example("exampleNet")
-    netflux.write_sif(model)
-    netflux.export_python_ode(model)
-    assert (tmp_path / "output" / "exampleNet.sif").exists()
-    assert (tmp_path / "output" / "NetfluxODE.py").exists()
-
-
-def test_convert_sbml(tmp_path, monkeypatch):
-    pytest.importorskip("libsbml")
-    monkeypatch.chdir(tmp_path)
-    assert main(["convert-sbml", str(DATA / "toy_qual.xml")]) == 0
-    assert (tmp_path / "output" / "toy_qual" / "toy_qual Netflux.xlsx").exists()
-    assert main(["convert-sbml", str(DATA / "toy_qual.xml"), "-o", str(tmp_path / "abs")]) == 0
-    assert (tmp_path / "abs" / "toy_qual Netflux.xlsx").exists()
 
 
 def test_error_exit_code(tmp_path, capsys):
     bad = tmp_path / "bad.sif"
     bad.write_text("only two\n")
-    assert main(["convert-sif", str(bad)]) == 1
+    assert main(["convert", str(bad), "-o", "x.xlsx"]) == 1
     assert "error" in capsys.readouterr().err

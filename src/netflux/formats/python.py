@@ -6,10 +6,10 @@ import datetime as _dt
 import keyword
 from pathlib import Path
 
-from .model import Model
-from .paths import output_path
+from ..model import Model
+from ..output import output_path
 
-__all__ = ["python_ode_source", "export_python_ode", "python_variable_names"]
+__all__ = ["to_python", "write_python", "python_variable_names"]
 
 RESERVED_NAMES = frozenset({"t", "y", "tau", "ymax", "w", "n", "ec50", "dydt", "torch", "math", "hill", "OR"})
 
@@ -75,7 +75,7 @@ if __name__ == "__main__":
 '''
 
 
-def python_ode_source(model: Model) -> str:
+def to_python(model: Model) -> str:
     var = python_variable_names(model.species_ids)
     rates = [_rate(j, rule.inputs, var) for j, rule in enumerate(model.topology.rules)]
     lines = [
@@ -114,8 +114,7 @@ def python_ode_source(model: Model) -> str:
     return "\n".join(lines) + "\n" + _MAIN
 
 
-def export_python_ode(model: Model, path: str | Path | None = None) -> Path:
-    path = output_path(path, "NetfluxODE.py")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(python_ode_source(model), newline="\n")
+def write_python(model: Model, path: str | Path | None = None) -> Path:
+    path = output_path(path, f"{model.name}.py")
+    path.write_text(to_python(model), newline="\n")
     return path

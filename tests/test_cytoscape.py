@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 import netflux
-from netflux import read_model, to_node_attributes, to_sif, to_xgmml, write_sbgn_style, write_sif, write_xgmml
+from netflux import read_model, to_node_attributes, to_sif, to_xgmml, write_model, write_sbgn_style, write_xgmml
 
 from .conftest import complete_fixtures, fixture_id
 
@@ -41,8 +41,9 @@ def test_example_net_sif(examples):
 
 
 def test_write_sif(tmp_path, examples):
-    sif, attrs = write_sif(examples["exampleNet"], tmp_path, "net")
-    assert sif.name == "net.sif" and attrs.name == "net_nodeAttributes.txt"
+    sif = write_model(examples["exampleNet"], tmp_path / "net.sif")
+    attrs = tmp_path / "net_nodeAttributes.txt"
+    assert sif.name == "net.sif" and sif.read_text() == to_sif(examples["exampleNet"])
     assert attrs.read_text().startswith("Type (class=String)\nA = protein\n")
 
 
@@ -94,7 +95,7 @@ def test_xgmml_reference_with_new_species(tmp_path, examples):
     ref = write_xgmml(small, tmp_path / "ref.xgmml")
     bigger = small.copy()
     bigger.species.append(netflux.Species("F", type="phenotype"))
-    bigger.reactions.append(netflux.Reaction("r7", "E => F"))
+    bigger.reactions.append(netflux.Reaction.from_rule("r7", "E => F"))
     out = _parse(to_xgmml(bigger, reference=ref))
     labels = [n.get("label") for n in out.findall(f"{NS}node")]
     assert labels == ["A", "B", "C", "D", "E", "F", "rcn5"]
@@ -103,3 +104,13 @@ def test_xgmml_reference_with_new_species(tmp_path, examples):
 def test_sbgn_style(tmp_path):
     path = write_sbgn_style(tmp_path / "style.xml")
     assert "Netflux SBGN" in path.read_text()
+
+
+def test_write_model_forwards_xgmml_reference(tmp_path, examples):
+    model = examples["exampleNet"]
+    root = _parse(to_xgmml(model))
+    root.find(f"{NS}node/{NS}graphics").set("x", "123.0")
+    ref = tmp_path / "ref.xgmml"
+    ET.ElementTree(root).write(ref, encoding="utf-8")
+    out = _parse(write_model(model, tmp_path / "new.xgmml", reference=ref).read_text())
+    assert out.find(f"{NS}node/{NS}graphics").get("x") == "123.0"

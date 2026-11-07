@@ -8,14 +8,14 @@ import pytest
 import torch
 
 import netflux
-from netflux import Model, Reaction, Species, export_python_ode
-from netflux.codegen import python_variable_names
+from netflux import Model, Reaction, Species, write_model
+from netflux.formats.python import python_variable_names
 
 from .conftest import native_rhs
 
 
 def _check_generated_matches_native(model, path):
-    assert export_python_ode(model, path) == path
+    assert write_model(model, path) == path
     spec = importlib.util.spec_from_file_location(f"gen_{id(model)}", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -39,8 +39,8 @@ def test_name_collisions_are_renamed(tmp_path):
     model = Model(
         "collide",
         [Species(s) for s in ids],
-        [Reaction("r1", "=> A", weight=0.8), Reaction("r2", "A => n"), Reaction("r3", "n & !w => class"),
-         Reaction("r4", "class => n_"), Reaction("r5", "n_ => my-species")],
+        [Reaction.from_rule(f"r{k}", rule, weight=0.8 if k == 1 else 1.0) for k, rule in enumerate(
+            ["=> A", "A => n", "n & !w => class", "class => n_", "n_ => my-species"], start=1)],
     )
     names = python_variable_names(ids)
     assert len(set(names)) == len(names)
@@ -51,7 +51,7 @@ def test_name_collisions_are_renamed(tmp_path):
 
 def test_runs_as_script(examples, tmp_path):
     pytest.importorskip("matplotlib")
-    path = export_python_ode(examples["exampleNet"], tmp_path / "NetfluxODE.py")
+    path = write_model(examples["exampleNet"], tmp_path / "NetfluxODE.py")
     env = {**os.environ, "MPLBACKEND": "Agg"}
     proc = subprocess.run([sys.executable, str(path)], cwd=tmp_path, env=env, capture_output=True, text=True, timeout=300)
     assert proc.returncode == 0, proc.stderr

@@ -89,9 +89,9 @@ def test_reset_and_reset_parameters(examples):
     assert float(sim.weight[0]) == 0.0 and float(sim.tau[2]) == 1.0
 
 
-def test_set_state(examples):
+def test_set_initial_state(examples):
     sim = Simulator(examples["exampleNet"])
-    sim.set_state("B", 0.7)
+    sim.set_species("B", y0=0.7)
     result = sim.run(0.1, 0.1)
     assert float(result["B"][0]) == 0.7
 

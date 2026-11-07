@@ -51,7 +51,10 @@ def using_output_dir(path: str | Path | None) -> Iterator[Path]:
 
 
 def output_path(path: str | Path | None = None, default: str | Path | None = None) -> Path:
-    """Relative paths (or ``default``) go inside the output folder; returns an absolute path."""
+    """Absolute path to write to; relative paths (or ``default``) go inside the output folder.
+
+    The parent folder is created.
+    """
     chosen = path if path is not None else default
     base = get_output_dir()
     if chosen is None:
@@ -59,4 +62,6 @@ def output_path(path: str | Path | None = None, default: str | Path | None = Non
     else:
         chosen = Path(chosen)
         resolved = chosen if chosen.is_absolute() else base / chosen
-    return resolved.absolute()
+    resolved = resolved.absolute()
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    return resolved

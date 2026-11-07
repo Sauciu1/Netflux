@@ -40,7 +40,7 @@ def fixture_id(path: Path) -> str:
 @pytest.fixture(autouse=True)
 def isolated_output(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv(netflux.paths.ENV_VAR, raising=False)
+    monkeypatch.delenv(netflux.output.ENV_VAR, raising=False)
     netflux.set_output_dir(None)
     yield
     netflux.set_output_dir(None)

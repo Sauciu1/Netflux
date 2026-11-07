@@ -8,13 +8,11 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from . import __version__
-from .codegen import export_python_ode
-from .convert import convert_sbml_qual, import_sif
-from .cytoscape import write_sbgn_style, write_sif, write_xgmml
 from .examples import example_path, list_examples
-from .excel import read_model, write_model
+from .formats import READERS, WRITERS, read_model, write_model
+from .formats.xgmml import write_sbgn_style
 from .model import Model, ModelError
-from .paths import ENV_VAR, output_path, using_output_dir
+from .output import ENV_VAR, output_path, using_output_dir
 from .simulate import Simulator
 
 _REACTION_PARAMS = {"weight": "weight", "w": "weight", "n": "n", "ec50": "ec50"}
@@ -37,6 +35,13 @@ def _load(spec: str) -> Model:
 def _print_warnings(model: Model) -> None:
     for w in model.warnings:
         print(f"warning: {w}", file=sys.stderr)
+
+
+def _show(path: Path) -> str:
+    try:
+        return str(path.relative_to(Path.cwd()))
+    except ValueError:
+        return str(path)
 
 
 def _apply_settings(sim: Simulator, settings: Sequence[str]) -> None:
@@ -99,7 +104,6 @@ def cmd_simulate(args) -> int:
     if args.output:
         if Path(args.output).suffix.lower() == ".csv":
             out = output_path(args.output)
-            out.parent.mkdir(parents=True, exist_ok=True)
             result.to_dataframe().to_csv(out)
         else:
             out = result.write_data(args.output)
@@ -114,55 +118,21 @@ def cmd_simulate(args) -> int:
 
         matplotlib.use("Agg")
         plot = output_path(args.plot)
-        plot.parent.mkdir(parents=True, exist_ok=True)
-        ax = result.plot(species)
-        ax.figure.savefig(plot, dpi=150, bbox_inches="tight")
+        result.plot(species).figure.savefig(plot, dpi=150, bbox_inches="tight")
         print(f"Plot saved to {_show(plot)}")
     return 0
 
 
-def cmd_export_sif(args) -> int:
+def cmd_convert(args) -> int:
+    if args.reference and Path(args.output).suffix.lower() != ".xgmml":
+        raise SystemExit("netflux: --reference only applies to .xgmml output")
     model = _load(args.model)
-    sif, attrs = write_sif(model, args.output, args.name)
-    print(f"Wrote {_show(sif)}\nWrote {_show(attrs)}")
-    return 0
-
-
-def cmd_export_xgmml(args) -> int:
-    model = _load(args.model)
-    path = write_xgmml(model, args.output, args.reference)
-    print(f"Model exported to: {_show(path)}")
-    if args.style:
-        print(f"Style written to: {_show(write_sbgn_style(args.style))}")
-    return 0
-
-
-def cmd_export_python(args) -> int:
-    model = _load(args.model)
-    print(f"Wrote {_show(export_python_ode(model, args.output))}")
-    return 0
-
-
-def cmd_convert_sif(args) -> int:
-    source = Path(args.sif)
-    model = import_sif(source)
     _print_warnings(model)
-    output = write_model(model, args.output)
-    print(f"Model saved as: {_show(output)}")
+    options = {"reference": args.reference} if args.reference else {}
+    print(f"Wrote {_show(write_model(model, args.output, **options))}")
+    if args.style:
+        print(f"Wrote {_show(write_sbgn_style(args.style))}")
     return 0
-
-
-def cmd_convert_sbml(args) -> int:
-    folder = convert_sbml_qual(args.sbml, args.output)
-    print(f"Conversion complete. Saved to: {_show(folder)}")
-    return 0
-
-
-def _show(path: Path) -> str:
-    try:
-        return str(path.relative_to(Path.cwd()))
-    except ValueError:
-        return str(path)
 
 
 # --- parser
@@ -173,7 +143,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", action="version", version=f"netflux {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
-    model_help = "Netflux .xlsx/.xls file or bundled example name (see 'netflux examples')"
+    model_help = f"model file ({', '.join(READERS)}) or bundled example name (see 'netflux examples')"
     writes = argparse.ArgumentParser(add_help=False)
     writes.add_argument(
         "--output-dir", metavar="DIR",
@@ -206,43 +176,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--plot", metavar="FILE", help="save a plot (needs netflux[plot])")
     p.set_defaults(func=cmd_simulate)
 
-    p = sub.add_parser(
-        "export-sif", help="export Cytoscape .sif + _nodeAttributes.txt", parents=[writes]
-    )
+    p = sub.add_parser("convert", help="convert or export a model; format from the -o suffix", parents=[writes])
     p.add_argument("model", help=model_help)
-    p.add_argument("-o", "--output", help="subfolder of the output dir (default: the output dir)")
-    p.add_argument("--name", help="base file name (default: model name)")
-    p.set_defaults(func=cmd_export_sif)
-
-    p = sub.add_parser("export-xgmml", help="export Cytoscape XGMML", parents=[writes])
-    p.add_argument("model", help=model_help)
-    p.add_argument("-o", "--output", help="output .xgmml file (default: <model name>.xgmml)")
-    p.add_argument("--reference", help="XGMML exported from Cytoscape whose layout should be kept")
+    p.add_argument("-o", "--output", required=True, help=f"output file ({', '.join(WRITERS)})")
+    p.add_argument("--reference", help="for .xgmml: Cytoscape XGMML whose layout should be kept")
     p.add_argument(
         "--style", nargs="?", const="netflux_sbgn_style.xml", metavar="FILE",
-        help="also write the Netflux SBGN style XML (default name netflux_sbgn_style.xml)",
+        help="also write the Netflux SBGN Cytoscape style (default name netflux_sbgn_style.xml)",
     )
-    p.set_defaults(func=cmd_export_xgmml)
-
-    p = sub.add_parser("export-python", help="export standalone PyTorch ODE code", parents=[writes])
-    p.add_argument("model", help=model_help)
-    p.add_argument("-o", "--output", help="output .py file (default: NetfluxODE.py)")
-    p.set_defaults(func=cmd_export_python)
-
-    p = sub.add_parser(
-        "convert-sif", help="convert a SIF network to a Netflux .xlsx model", parents=[writes]
-    )
-    p.add_argument("sif", help="input .sif file")
-    p.add_argument("-o", "--output", help="output .xlsx (default: <sif file name>.xlsx)")
-    p.set_defaults(func=cmd_convert_sif)
-
-    p = sub.add_parser(
-        "convert-sbml", help="convert SBML-qual to .xlsx + .sif (needs netflux[sbml])",
-        parents=[writes],
-    )
-    p.add_argument("sbml", help="input SBML-qual .xml file")
-    p.add_argument("-o", "--output", help="output folder (default: <file stem>)")
-    p.set_defaults(func=cmd_convert_sbml)
+    p.set_defaults(func=cmd_convert)
     return parser
 
 

@@ -17,12 +17,13 @@ dependencies = [
     "pandas>=2.2.3",
     "openpyxl>=3.1",
     "python-calamine>=0.3",
+    "python-libsbml>=5.20",
+    "sympy>=1.13",
 ]
 
 [project.optional-dependencies]
 plot = ["matplotlib>=3.9"]
-sbml = ["python-libsbml>=5.20"]
-all = ["netflux[plot,sbml]"]
+all = ["netflux[plot]"]
 
 [project.scripts]
 netflux = "netflux.cli:main"

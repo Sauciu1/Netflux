@@ -1,14 +1,18 @@
-"""Netflux model data structures."""
+"""Netflux model: species, and reactions whose inputs are ANDed (reactions producing a species are ORed).
+
+A reaction is stored as inputs and outputs, as in SBML-qual. Rule strings such as ``"A & !B => C"``
+(also ``->``, ``+``/``AND`` and ``NOT``) are only a text form, used by the Excel sheet and
+``Reaction.from_rule``.
+"""
 
 from __future__ import annotations
 
 import copy as _copy
+import math
 import re
 from collections import Counter
 from dataclasses import dataclass, field
-from pathlib import Path
-
-from .rules import Topology, compile_rules
+from typing import Any, NamedTuple
 
 __all__ = [
     "Species",
@@ -19,14 +23,16 @@ __all__ = [
     "DEFAULT_SPECIES_PARAMS",
     "DEFAULT_REACTION_PARAMS",
     "UNDEFINED_HILL",
+    "Wiring",
+    "Topology",
+    "parse_rule",
 ]
 
 DEFAULT_SPECIES_PARAMS = {"y0": 0.0, "ymax": 1.0, "tau": 1.0}
 DEFAULT_REACTION_PARAMS = {"weight": 1.0, "n": 1.4, "ec50": 0.5}
 UNDEFINED_HILL = "EC50^n >= 0.5, so the normalized Hill function is undefined"
 
-_VALID_ID = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
-_RESERVED_IDS = {"AND", "NOT"}
+Inputs = tuple[tuple[str, bool], ...]  # (species id, negated)
 
 
 class ModelError(ValueError):
@@ -35,6 +41,53 @@ class ModelError(ValueError):
 
 class NetfluxWarning(UserWarning):
     """Recoverable model problems."""
+
+
+# --- rule strings
+
+_ARROW = re.compile(r"=>|->")
+_SEPARATOR = re.compile(r"&|\+|\bAND\b")
+_NEGATION = re.compile(r"^(?:!|NOT\s)\s*")
+
+
+def _terms(text: str) -> list[str]:
+    return [t.strip() for t in _SEPARATOR.split(text) if t.strip()]
+
+
+def parse_rule(rule: str) -> tuple[Inputs, tuple[str, ...]]:
+    """``"A & !B => C"`` -> ``((("A", False), ("B", True)), ("C",))``."""
+    arrow = _ARROW.search(rule)
+    if arrow is None:
+        raise ModelError(f"no reaction arrow ('=>') could be identified in {rule!r}")
+    inputs = []
+    for term in _terms(rule[: arrow.start()]):
+        negation = _NEGATION.match(term)
+        inputs.append((term[negation.end():], True) if negation else (term, False))
+    return tuple(inputs), tuple(_terms(rule[arrow.end():]))
+
+
+# --- model
+
+
+def number(value: Any) -> float | None:
+    """``float(value)``, or ``None`` for missing, non-numeric, NaN or boolean values."""
+    if isinstance(value, bool):
+        return None
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    return None if math.isnan(result) else result
+
+
+def with_defaults(
+    values: dict[str, float | None], defaults: dict[str, float], label: str, warnings: list[str]
+) -> dict[str, float]:
+    """Replace ``None`` values with defaults, recording a warning for ``label``."""
+    missing = [k for k, v in values.items() if v is None]
+    if missing:
+        warnings.append(f"{label}: missing parameter(s) {', '.join(missing)}; default parameters assigned")
+    return {k: defaults[k] if v is None else v for k, v in values.items()}
 
 
 @dataclass
@@ -54,12 +107,55 @@ class Species:
 
 @dataclass
 class Reaction:
+    """Rate = weight x the product of each input's Hill term; no inputs means rate = weight."""
+
     id: str
-    rule: str
+    inputs: Inputs = ()
+    outputs: tuple[str, ...] = ()
     weight: float = DEFAULT_REACTION_PARAMS["weight"]
     n: float = DEFAULT_REACTION_PARAMS["n"]
     ec50: float = DEFAULT_REACTION_PARAMS["ec50"]
     module: str = ""
+
+    def __post_init__(self) -> None:
+        self.inputs = tuple((str(s), bool(negated)) for s, negated in self.inputs)
+        self.outputs = tuple(str(s) for s in self.outputs)
+
+    @classmethod
+    def from_rule(cls, id: str, rule: str, **params) -> Reaction:  # noqa: A002 - mirrors the field
+        inputs, outputs = parse_rule(rule)
+        return cls(id, inputs, outputs, **params)
+
+    @property
+    def rule(self) -> str:
+        lhs = " & ".join(f"!{s}" if negated else s for s, negated in self.inputs)
+        return f"{lhs} => {' & '.join(self.outputs)}".strip()
+
+
+class Wiring(NamedTuple):
+    inputs: tuple[tuple[int, bool], ...]  # (species index, negated), in species order
+    products: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class Topology:
+    """Reactions resolved to species indices; names that are not species are left out."""
+
+    n_species: int
+    rules: tuple[Wiring, ...]
+
+    @property
+    def producers(self) -> tuple[tuple[int, ...], ...]:
+        """Reactions producing each species, in reaction order."""
+        out: list[list[int]] = [[] for _ in range(self.n_species)]
+        for j, rule in enumerate(self.rules):
+            for i in rule.products:
+                out[i].append(j)
+        return tuple(tuple(p) for p in out)
+
+
+_VALID_ID = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
+_RESERVED_IDS = {"AND", "NOT"}
 
 
 @dataclass
@@ -98,7 +194,18 @@ class Model:
 
     @property
     def topology(self) -> Topology:
-        return compile_rules(self.species_ids, [r.rule for r in self.reactions])
+        index: dict[str, int] = {}
+        for i, s in enumerate(self.species):
+            index.setdefault(s.id, i)
+        rules = []
+        for r in self.reactions:
+            negated: dict[int, bool] = {}
+            for name, neg in r.inputs:
+                if name in index:
+                    negated[index[name]] = negated.get(index[name], False) or neg
+            products = tuple(sorted({index[o] for o in r.outputs if o in index}))
+            rules.append(Wiring(tuple(sorted(negated.items())), products))
+        return Topology(len(self.species), tuple(rules))
 
     def copy(self) -> Model:
         return _copy.deepcopy(self)
@@ -115,32 +222,29 @@ class Model:
             )
         reserved = [s for s in ids if s in _RESERVED_IDS]
         if reserved:
-            out.append(
-                "Species ID(s) " + ", ".join(reserved) + " clash with rule keywords AND/NOT"
-            )
+            out.append("Species ID(s) " + ", ".join(reserved) + " clash with rule keywords AND/NOT")
         dup_species = [s for s, c in Counter(ids).items() if c > 1]
         if dup_species:
             out.append("Duplicate species detected: " + ", ".join(dup_species))
-        rules = [r.rule for r in self.reactions]
-        dup_rules = [r for r, c in Counter(rules).items() if c > 1]
-        for rule in dup_rules:
-            rids = [r.id for r in self.reactions if r.rule == rule]
-            out.append(f"Duplicate reactions detected: {'/'.join(rids)}: {rule}")
-        for rxn, parsed in zip(self.reactions, self.topology.rules):
-            if parsed.error is not None:
-                out.append(f"Reaction {rxn.id}: {rxn.rule}: {parsed.error}")
-            if parsed.inputs and rxn.ec50**rxn.n >= 0.5:
-                out.append(f"Reaction {rxn.id}: {UNDEFINED_HILL}")
+
+        def key(r: Reaction):
+            return tuple(sorted(r.inputs)), tuple(sorted(r.outputs))
+
+        counts = Counter(key(r) for r in self.reactions)
+        reported = set()
+        for r in self.reactions:
+            if counts[key(r)] > 1 and key(r) not in reported:
+                reported.add(key(r))
+                rids = [q.id for q in self.reactions if key(q) == key(r)]
+                out.append(f"Duplicate reactions detected: {'/'.join(rids)}: {r.rule}")
+
+        known = set(ids)
+        for r, wiring in zip(self.reactions, self.topology.rules):
+            unknown = [s for s, _ in r.inputs if s not in known]
+            if not wiring.products:
+                out.append(f"Reaction {r.id}: {r.rule}: product not recognized")
+            elif unknown:
+                out.append(f"Reaction {r.id}: {r.rule}: reactant(s) not recognized: {', '.join(unknown)}")
+            if wiring.inputs and r.ec50**r.n >= 0.5:
+                out.append(f"Reaction {r.id}: {UNDEFINED_HILL}")
         return out
-
-    # --- io
-    @classmethod
-    def from_file(cls, path: str | Path) -> Model:
-        from .excel import read_model
-
-        return read_model(path)
-
-    def to_excel(self, path: str | Path | None = None) -> Path:
-        from .excel import write_model
-
-        return write_model(self, path)

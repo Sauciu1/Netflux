@@ -5,9 +5,8 @@ import pytest
 import netflux
 from netflux import get_output_dir, output_path, set_output_dir, using_output_dir
 from netflux.cli import main
-from netflux.paths import ENV_VAR
+from netflux.output import ENV_VAR
 
-from .conftest import DATA
 
 
 def test_default_is_output_folder(tmp_path):
@@ -52,35 +51,28 @@ def test_using_output_dir_is_temporary(tmp_path):
 
 def test_current_directory_behaviour(tmp_path, examples):
     set_output_dir(".")
-    assert examples["exampleNet"].to_excel("m.xlsx") == tmp_path / "m.xlsx"
+    assert netflux.write_model(examples["exampleNet"], "m.xlsx") == tmp_path / "m.xlsx"
 
 
 def test_every_writer_defaults_to_output_folder(tmp_path, examples):
     model = examples["exampleNet"]
     out = tmp_path / "output"
-    assert model.to_excel() == out / "exampleNet.xlsx"
+    assert netflux.write_model(model) == out / "exampleNet.xlsx"
     assert netflux.write_model(model, "sub/copy.xlsx") == out / "sub" / "copy.xlsx"
-    assert netflux.write_sif(model) == (out / "exampleNet.sif", out / "exampleNet_nodeAttributes.txt")
+    assert netflux.write_model(model, "exampleNet.sif") == out / "exampleNet.sif"
+    assert (out / "exampleNet_nodeAttributes.txt").exists()
     assert netflux.write_xgmml(model) == out / "exampleNet.xgmml"
     assert netflux.write_sbgn_style() == out / "netflux_sbgn_style.xml"
-    assert netflux.export_python_ode(model, "code/ode.py") == out / "code" / "ode.py"
+    assert netflux.write_model(model, "code/ode.py") == out / "code" / "ode.py"
     assert netflux.simulate(model, 1).write_data() == out / "exampleNet_data.txt"
     assert all(p.exists() for p in out.rglob("*"))
     assert sorted(p.name for p in tmp_path.iterdir()) == ["output"]
 
 
-def test_convert_sbml_qual_is_not_nested_twice(tmp_path):
-    pytest.importorskip("libsbml")
-    folder = netflux.convert_sbml_qual(DATA / "toy_qual.xml", "sbml")
-    assert folder == tmp_path / "output" / "sbml"
-    assert (folder / "toy_qual Netflux.xlsx").exists()
-    assert netflux.convert_sbml_qual(DATA / "toy_qual.xml") == tmp_path / "output" / "toy_qual"
-
-
 def test_cli_uses_env_and_option(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_VAR, "env_out")
-    assert main(["export-sif", "exampleNet"]) == 0
-    assert (tmp_path / "env_out" / "exampleNet.sif").exists()
-    assert main(["export-sif", "exampleNet", "--output-dir", "opt_out"]) == 0
-    assert (tmp_path / "opt_out" / "exampleNet.sif").exists()
+    assert main(["convert", "exampleNet", "-o", "net.sif"]) == 0
+    assert (tmp_path / "env_out" / "net.sif").exists()
+    assert main(["convert", "exampleNet", "-o", "net.sif", "--output-dir", "opt_out"]) == 0
+    assert (tmp_path / "opt_out" / "net.sif").exists()
     assert get_output_dir() == Path("env_out")

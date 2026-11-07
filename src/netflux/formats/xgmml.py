@@ -1,80 +1,18 @@
-"""Cytoscape export: SIF + node attributes (byte-identical to MATLAB Netflux) and XGMML."""
+"""Cytoscape XGMML export and the Netflux SBGN style file."""
 
 from __future__ import annotations
 
 import shutil
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
 from pathlib import Path
 
-from ._data import SBGN_STYLE
-from .model import Model
-from .paths import output_path
+from ..examples import SBGN_STYLE
+from ..model import Model
+from ..output import output_path
+from .sif import network_edges
 
-__all__ = [
-    "Edge",
-    "network_edges",
-    "to_sif",
-    "to_node_attributes",
-    "write_sif",
-    "to_xgmml",
-    "write_xgmml",
-    "write_sbgn_style",
-]
+__all__ = ["to_xgmml", "write_xgmml", "write_sbgn_style"]
 
-
-@dataclass(frozen=True)
-class Edge:
-    source: str
-    sign: int  # 1 activating, -1 inhibiting
-    target: str
-
-
-def network_edges(model: Model) -> tuple[list[Edge], list[str]]:
-    """Edges of reactions with one product; multi-input reactions go through an ``rcn<k>`` AND node."""
-    ids = model.species_ids
-    edges: list[Edge] = []
-    connectors: list[str] = []
-    for k, rule in enumerate(model.topology.rules, start=1):
-        if len(rule.products) != 1 or not rule.inputs:
-            continue
-        target = ids[rule.products[0]]
-        if len(rule.inputs) > 1:
-            connectors.append(f"rcn{k}")
-            edges.append(Edge(connectors[-1], 1, target))
-            target = connectors[-1]
-        edges += [Edge(ids[i], -1 if neg else 1, target) for i, neg in rule.inputs]
-    return edges, connectors
-
-
-def to_sif(model: Model) -> str:
-    edges, _ = network_edges(model)
-    return "".join(f"{e.source}\t{e.sign}\t{e.target}\n" for e in edges)
-
-
-def to_node_attributes(model: Model) -> str:
-    _, connectors = network_edges(model)
-    lines = ["Type (class=String)"]
-    lines += [f"{s.id} = {s.type}" for s in model.species]
-    lines += [f"{c} = connector" for c in connectors]
-    return "\n".join(lines) + "\n"
-
-
-def write_sif(
-    model: Model, directory: str | Path | None = None, name: str | None = None
-) -> tuple[Path, Path]:
-    """Writes ``<name>.sif`` and ``<name>_nodeAttributes.txt``."""
-    directory = output_path(directory)
-    directory.mkdir(parents=True, exist_ok=True)
-    name = name or model.name
-    sif = directory / f"{name}.sif"
-    attrs = directory / f"{name}_nodeAttributes.txt"
-    sif.write_text(to_sif(model), newline="")
-    attrs.write_text(to_node_attributes(model), newline="")
-    return sif, attrs
-
-
-# --- XGMML
 
 _XGMML = "http://www.cs.rpi.edu/XGMML"
 _CY = "http://www.cytoscape.org"
@@ -150,13 +88,11 @@ def write_xgmml(
     model: Model, path: str | Path | None = None, reference: str | Path | None = None
 ) -> Path:
     path = output_path(path, f"{model.name}.xgmml")
-    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(to_xgmml(model, reference), encoding="utf-8")
     return path
 
 
 def write_sbgn_style(path: str | Path | None = None) -> Path:
     path = output_path(path, "netflux_sbgn_style.xml")
-    path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(SBGN_STYLE, path)
     return path

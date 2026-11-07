@@ -98,4 +98,22 @@ def test_no_species(tmp_path):
 
 def test_write_requires_xlsx(tmp_path):
     with pytest.raises(ValueError):
-        write_model(Model("m", [Species("A")], [Reaction("r1", "=> A")]), tmp_path / "m.xls")
+        write_model(Model("m", [Species("A")], [Reaction.from_rule("r1", "=> A")]), tmp_path / "m.xls")
+
+
+def test_rule_without_arrow_is_skipped_with_warning(tmp_path):
+    path = _write_raw(
+        tmp_path / "m.xlsx",
+        [[None, "A", "a", 0, 1, 1], [None, "B", "b", 0, 1, 1]],
+        [[None, "r1", "=> A", 1, 1.4, 0.5], [None, "r2", "A B", 1, 1.4, 0.5]],
+    )
+    m = read_model(path)
+    assert m.reaction_ids == ["r1"]
+    assert any("Reaction r2" in w and "arrow" in w and "skipped" in w for w in m.warnings)
+
+
+def test_rules_are_written_in_normal_form(tmp_path, examples):
+    original = examples["kraeutler_betaAdrenergic_bmcsysbio2010"]
+    again = read_model(write_model(original, tmp_path / "copy.xlsx"))
+    assert again.get_reaction("r6").rule == "NE & !B1ARPG & !B1ARPA => B1AR"  # was written with '+'
+    assert again.topology == original.topology
