@@ -55,3 +55,5 @@ build/
 # Generated files (CLI and library defaults write here)
 output/*
 !output/.gitkeep
+
+uv.lock

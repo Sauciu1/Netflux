@@ -9,7 +9,7 @@ except PackageNotFoundError:  # pragma: no cover - running from a source tree
 
 from .examples import list_examples, load_example
 from .formats import read_model, write_model
-from .formats.python import to_python
+from .formats.excel import read_excel_frames
 from .formats.sbml import from_sbml, to_sbml
 from .formats.sif import to_node_attributes, to_sif
 from .formats.xgmml import to_xgmml, write_sbgn_style, write_xgmml
@@ -50,11 +50,11 @@ __all__ = [
     "load_example",
     "output_path",
     "parse_rule",
+    "read_excel_frames",
     "read_model",
     "set_output_dir",
     "simulate",
     "to_node_attributes",
-    "to_python",
     "to_sif",
     "to_xgmml",
     "to_sbml",

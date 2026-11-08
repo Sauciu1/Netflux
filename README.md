@@ -103,4 +103,6 @@ netflux.write_model(model, "model.xml")      # output/model.xml
 sbml_text = netflux.to_sbml(model)
 ```
 
-`read_model` reads `.xlsx`, `.xls`, `.xml`/`.sbml` (SBML-qual) and `.sif`. `write_model` writes `.xlsx`, `.xml`/`.sbml`, `.sif` (plus `_nodeAttributes.txt`), `.xgmml` (Cytoscape) and `.py` (standalone PyTorch code). The CLI does the same: `netflux convert exampleNet -o exampleNet.xml`.
+`read_model` reads `.xlsx`, `.xls`, `.xml`/`.sbml` (SBML-qual) and `.sif`. `write_model` writes `.xlsx`, `.xml`/`.sbml`, `.sif` (plus `_nodeAttributes.txt`) and `.xgmml` (Cytoscape). The CLI does the same: `netflux convert exampleNet -o exampleNet.xml`.
+
+To work with an Excel model as tables, `species, reactions = netflux.read_excel_frames("model.xlsx")` returns two pandas DataFrames, including the reference and notes columns that a `Model` does not keep.

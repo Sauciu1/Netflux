@@ -25,9 +25,15 @@ from ..model import (
 )
 from ..output import output_path
 
-__all__ = ["read_excel", "write_excel"]
+__all__ = ["read_excel", "read_excel_frames", "write_excel"]
 
+_HEADER_ROW = 1  # zero-based: Excel row 2
 _FIRST_DATA_ROW = 2  # zero-based: Excel row 3
+
+# Columns that mean the same in every workbook, named after the Species/Reaction fields.
+_SPECIES_COLUMNS = ["module", "id", "name", "y0", "ymax", "tau", "type"]
+_REACTION_COLUMNS = ["module", "id", "rule", "weight", "n", "ec50"]
+_NUMERIC_COLUMNS = {*DEFAULT_SPECIES_PARAMS, *DEFAULT_REACTION_PARAMS}
 
 SPECIES_HEADERS = ["Module", "ID", "name", "Yinit", "Ymax", "tau", "type", "location", "ref", "notes"]
 REACTION_HEADERS = [
@@ -66,15 +72,63 @@ def _get(row: list[Any], col: int) -> Any:
     return row[col] if col < len(row) else None
 
 
-def read_excel(path: str | Path) -> Model:
-    """Missing parameters get MATLAB defaults; problems are listed in ``Model.warnings``."""
-    path = Path(path)
+def _read_sheets(path: Path) -> dict[str, pd.DataFrame]:
     try:
-        sheets = pd.read_excel(path, sheet_name=None, header=None, dtype=object, engine="calamine")
+        return pd.read_excel(path, sheet_name=None, header=None, dtype=object, engine="calamine")
     except FileNotFoundError:
         raise
     except Exception as exc:  # pandas raises a variety of engine errors
         raise ModelError(f"could not read {path}: {exc}") from exc
+
+
+def _column_labels(header: list[Any], names: list[str]) -> list[str]:
+    """``names``, then the sheet's own headers labelled as pandas would (``PMID.1``, ``Unnamed: 10``).
+
+    Not ``read_excel(header=1)``: that raises on any sheet with fewer than two rows.
+    """
+    labels = list(names)
+    for position, value in enumerate(header[len(names):], start=len(names)):
+        base = label = _text(value) or f"Unnamed: {position}"
+        repeats = 0
+        while label in labels:
+            repeats += 1
+            label = f"{base}.{repeats}"
+        labels.append(label)
+    return labels
+
+
+def _table(sheet: pd.DataFrame, names: list[str], key: str) -> pd.DataFrame:
+    """One sheet with named columns, keeping only the rows whose ``key`` column is filled in."""
+    width = max(sheet.shape[1], len(names))
+    sheet = sheet.reindex(columns=range(width))
+    header = sheet.iloc[_HEADER_ROW].tolist() if len(sheet) > _HEADER_ROW else [None] * width
+    table = sheet.iloc[_FIRST_DATA_ROW:].set_axis(_column_labels(header, names), axis="columns")
+    table = table.assign(
+        **{c: table[c].map(number).astype(float) if c in _NUMERIC_COLUMNS else table[c].map(_text) for c in names}
+    )
+    return table[table[key] != ""].reset_index(drop=True)
+
+
+def read_excel_frames(path: str | Path) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """The ``(species, reactions)`` sheets as DataFrames, including columns a ``Model`` does not keep.
+
+    The leading columns are named after the ``Species``/``Reaction`` fields whatever the file calls
+    them (``id``, ``y0``, ``ec50``...); later columns keep the file's headers. Rows without a species ID
+    or reaction rule are dropped, as in ``read_excel``. Unlike ``read_excel``, missing or non-numeric
+    parameters stay ``NaN`` instead of getting defaults, and rules are left as written, unparsed.
+    """
+    path = Path(path)
+    sheets = _read_sheets(path)
+    return (
+        _table(_find_sheet(sheets, "species", path), _SPECIES_COLUMNS, "id"),
+        _table(_find_sheet(sheets, "reactions", path), _REACTION_COLUMNS, "rule"),
+    )
+
+
+def read_excel(path: str | Path) -> Model:
+    """Missing parameters get MATLAB defaults; problems are listed in ``Model.warnings``."""
+    path = Path(path)
+    sheets = _read_sheets(path)
 
     warnings: list[str] = []
 

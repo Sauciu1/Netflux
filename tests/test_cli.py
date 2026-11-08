@@ -51,7 +51,7 @@ def test_unknown_model():
 
 def test_convert_to_every_format(tmp_path):
     out = tmp_path / "out"
-    for suffix in (".sif", ".xgmml", ".py", ".xml", ".xlsx"):
+    for suffix in (".sif", ".xgmml", ".xml", ".xlsx"):
         assert main(["convert", "exampleNet", "-o", str(out / f"net{suffix}")]) == 0
         assert (out / f"net{suffix}").exists()
     assert (out / "net_nodeAttributes.txt").exists()
@@ -89,13 +89,13 @@ def test_everything_defaults_to_output_folder(tmp_path):
     assert main(["simulate", "exampleNet", "--t-end", "1", "-o", "data.csv"]) == 0
     assert main(["convert", "exampleNet", "-o", "exampleNet.sif"]) == 0
     assert main(["convert", "exampleNet", "-o", "exampleNet.xgmml", "--style", "style.xml"]) == 0
-    assert main(["convert", "exampleNet", "-o", "code/NetfluxODE.py"]) == 0
+    assert main(["convert", "exampleNet", "-o", "models/net.xml"]) == 0
     assert sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*") if p.is_file()) == [
-        "output/code/NetfluxODE.py",
         "output/data.csv",
         "output/exampleNet.sif",
         "output/exampleNet.xgmml",
         "output/exampleNet_nodeAttributes.txt",
+        "output/models/net.xml",
         "output/style.xml",
     ]
 
